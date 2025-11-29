@@ -1,0 +1,5 @@
+{
+  "name": "Rocket Insights",
+  "description": "A market intelligence dashboard that scans top global trade journals and data sources to track agency-client movements.",
+  "requestFramePermissions": []
+}
