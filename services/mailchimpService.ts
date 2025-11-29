@@ -1,57 +1,52 @@
 
-import { MAILCHIMP_ACTION_URL } from "../constants";
+import { MAILCHIMP_ACTION_URL } from '../constants';
 
-interface MailchimpResponse {
-  result: 'success' | 'error';
-  msg: string;
-}
-
-// Helper to perform JSONP request
-// This mimics standard form submission but uses a script tag to avoid CORS issues
-const jsonp = (url: string, callback: (data: MailchimpResponse) => void) => {
-  const script = document.createElement('script');
-  const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
-  
-  // Attach callback to window
-  (window as any)[callbackName] = (data: MailchimpResponse) => {
-    delete (window as any)[callbackName];
-    document.body.removeChild(script);
-    callback(data);
-  };
-
-  // Modify URL to be JSONP compatible
-  // Replaces /post? with /post-json? and adds callback parameter
-  const jsonpUrl = url.replace('/post?', '/post-json?') + "&c=" + callbackName;
-  
-  script.src = jsonpUrl;
-  document.body.appendChild(script);
-};
-
-export const subscribeToMailchimp = (email: string): Promise<string> => {
+export const subscribeToMailchimp = (email: string): Promise<{ result: string; msg: string }> => {
   return new Promise((resolve, reject) => {
+    // 1. Ensure the URL is valid
     if (!MAILCHIMP_ACTION_URL) {
-      console.warn("Mailchimp Action URL is not configured in constants.ts");
-      return resolve("Skipped Mailchimp (Configuration Missing)");
+      reject(new Error('Mailchimp URL is not configured.'));
+      return;
     }
 
-    // Prepare params
-    const params = `&EMAIL=${encodeURIComponent(email)}`;
-    const url = MAILCHIMP_ACTION_URL + params;
+    // 2. Convert /post? to /post-json? for JSONP support
+    // This allows cross-origin requests from the browser
+    const url = MAILCHIMP_ACTION_URL.replace('/post?', '/post-json?');
+    
+    // 3. Create a unique callback name to avoid collisions
+    const callbackName = `jsonp_callback_${Math.round(100000 * Math.random())}`;
+    
+    // 4. Construct the query parameters
+    // 'c' is the specific parameter Mailchimp uses for the JSONP callback function
+    const params = `&EMAIL=${encodeURIComponent(email)}&c=${callbackName}`;
+    const scriptUrl = `${url}${params}`;
 
-    try {
-      jsonp(url, (data) => {
-        if (data.result === 'success') {
-          resolve("Successfully subscribed to Mailchimp");
-        } else {
-          // Mailchimp error messages can contain HTML, strip it if needed or just log
-          console.warn("Mailchimp returned error:", data.msg);
-          // We resolve anyway so we don't block the app's main flow
-          resolve(`Mailchimp: ${data.msg}`);
-        }
-      });
-    } catch (e) {
-      console.error("Mailchimp JSONP Error", e);
-      reject(e);
-    }
+    // 5. Create the script element
+    const script = document.createElement('script');
+    script.src = scriptUrl;
+
+    // 6. Define the global callback function that Mailchimp will call
+    (window as any)[callbackName] = (data: any) => {
+      // Cleanup: remove the function and the script tag
+      delete (window as any)[callbackName];
+      document.body.removeChild(script);
+      
+      if (data.result === 'success') {
+        resolve({ result: 'success', msg: data.msg });
+      } else {
+        // Mailchimp sends error messages (like "Already subscribed") in data.msg
+        resolve({ result: 'error', msg: data.msg });
+      }
+    };
+
+    // 7. Handle network errors
+    script.onerror = () => {
+      delete (window as any)[callbackName];
+      document.body.removeChild(script);
+      reject(new Error('Network error connecting to Mailchimp'));
+    };
+
+    // 8. Append script to document to trigger the request
+    document.body.appendChild(script);
   });
 };

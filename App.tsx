@@ -101,23 +101,33 @@ const App: React.FC = () => {
     localStorage.setItem('apacMarketIntelUser', JSON.stringify(profile));
     setIsLoginModalOpen(false);
 
-    let toastMessage = "Welcome! Subscribed locally.";
+    let message = "Subscribed locally.";
 
-    // 1. Attempt Mailchimp Sync (Fire and forget style)
+    // 1. Mailchimp Subscription
     try {
-      // We don't await this to block UI, but we trigger it
-      subscribeToMailchimp(profile.email).then(msg => {
-        console.log("Mailchimp Sync:", msg);
-      });
+      const mcResponse = await subscribeToMailchimp(profile.email);
+      if (mcResponse.result === 'success') {
+         message = "Success! Please check your email to confirm subscription.";
+      } else if (mcResponse.msg.includes("already subscribed")) {
+         message = "Welcome back! You are already on our list.";
+      } else {
+         console.warn("Mailchimp warning:", mcResponse.msg);
+         // Keep local success message but log warning, or show brief error
+         const shortMsg = mcResponse.msg.length > 40 ? mcResponse.msg.substring(0, 40) + '...' : mcResponse.msg;
+         message = `Subscribed locally. (${shortMsg})`;
+      }
     } catch (mcError) {
-      console.warn("Mailchimp failed", mcError);
+      console.error("Mailchimp error:", mcError);
     }
 
     // 2. Attempt Supabase Sync
     if (isSupabaseConfigured()) {
         try {
             await subscribeUser(profile);
-            toastMessage = `Success! Your weekly digest will be sent to ${profile.email}.`;
+            // If Mailchimp was effectively a success or handled, update message to reflect DB sync too
+            if (message === "Subscribed locally.") {
+               message = `Success! Your weekly digest will be sent to ${profile.email}.`;
+            }
         } catch (err: any) {
             console.error("Subscription process error:", err);
             
@@ -136,19 +146,14 @@ const App: React.FC = () => {
             if (isTableMissing) {
                 alert("Database Setup Required: The 'subscribers' table does not exist. Please check the 'Admin: Subscribers' view for setup instructions.");
             } else if (isEmailError) {
-                // If this is an email error, we still allow the local login but warn the admin/user
-                toastMessage = "Subscribed to App. (Check Mailchimp/Supabase settings)";
-                console.warn("Server-side email error detected. Check Supabase SMTP/Resend settings.");
+                console.warn("Server-side email error detected.");
             } else if (err.message !== 'MISSING_CREDENTIALS') {
-                alert("Note: Could not sync subscription to server. " + (err.message || "Unknown error"));
+                console.warn("Supabase sync issue:", err.message);
             }
         }
-    } else {
-        toastMessage = `Subscribed locally. (Configure Supabase/Mailchimp for cloud sync)`;
     }
 
-    setLoginToast(toastMessage);
-    // Auto-hide toast after 5 seconds
+    setLoginToast(message);
     setTimeout(() => setLoginToast(null), 5000);
   };
 
@@ -163,12 +168,9 @@ const App: React.FC = () => {
         if (user?.email && isSupabaseConfigured()) {
             await unsubscribeUser(user.email);
         }
-        // Note: Mailchimp unsubscribe usually requires user to click link in email
-        // We can't easily unsubscribe them via JSONP without API Key
-        
         setUser(null);
         localStorage.removeItem('apacMarketIntelUser');
-        setLoginToast("You have been unsubscribed from the app.");
+        setLoginToast("You have been unsubscribed.");
         setTimeout(() => setLoginToast(null), 3000);
       } catch (err) {
         console.error("Error unsubscribing:", err);

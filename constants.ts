@@ -1,9 +1,7 @@
 
 import { Source } from './types';
 
-// REPLACE THIS with your Mailchimp Embedded Form Action URL
-// It usually looks like: https://yourdomain.us20.list-manage.com/subscribe/post?u=xxxx&id=xxxx
-export const MAILCHIMP_ACTION_URL = ""; 
+export const MAILCHIMP_ACTION_URL = "https://rocketinsights.us18.list-manage.com/subscribe/post?u=d213a7d99a7b87b9d92b6f4c8&id=e46908a2b1&f_id=004daee6f0";
 
 export const MEDIA_TYPES = [
   "All Media",
