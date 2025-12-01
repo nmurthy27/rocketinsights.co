@@ -36,9 +36,10 @@ export interface LeaderProfile {
 
 export interface UserProfile {
   email: string;
-  regions: string[];
-  topics: string[];
-  isSubscribed: boolean;
+  role: 'admin' | 'subscriber';
+  regions?: string[];
+  topics?: string[];
+  isSubscribed?: boolean;
   consentDate?: string;
 }
 
@@ -55,4 +56,19 @@ export enum ScanStatus {
   SCANNING = 'SCANNING',
   COMPLETED = 'COMPLETED',
   ERROR = 'ERROR',
+}
+
+// History Interfaces
+export interface PulseSearchHistoryItem {
+  clientQuery: string;
+  countryQuery: string;
+  mediaQuery: string;
+  timestamp: number;
+}
+
+export interface LeadershipSearchHistoryItem {
+  role: string;
+  company: string;
+  country: string;
+  timestamp: number;
 }

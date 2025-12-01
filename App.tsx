@@ -7,41 +7,37 @@ import { DailyBriefing } from './components/DailyBriefing';
 import { OOHCampaigns } from './components/OOHCampaigns';
 import { LeadershipScanner } from './components/LeadershipScanner';
 import { LoginModal } from './components/LoginModal';
-import { SubscribersListModal } from './components/SubscribersListModal';
 import { MasterSearchSection } from './components/MasterSearchSection';
-import { SOURCES, MEDIA_TYPES, NEWS_REGIONS } from './constants';
-import { AgencyWin, NewsItem, ScanStatus, UserProfile } from './types';
+import { AdminDashboard } from './components/AdminDashboard';
+import { SOURCES, MEDIA_TYPES } from './constants';
+import { AgencyWin, NewsItem, ScanStatus, UserProfile, PulseSearchHistoryItem } from './types';
 import { scanMarketIntelligence, fetchDailyNews, fetchOOHCampaigns } from './services/geminiService';
-import { subscribeUser, unsubscribeUser, isSupabaseConfigured } from './services/supabaseClient';
+import { saveSubscriberToSupabase, logPulseSearchToSupabase } from './services/supabaseClient';
 import { subscribeToMailchimp } from './services/mailchimpService';
+import { getPulseSearchHistory, addPulseSearchHistory } from './services/localStorageService';
 
-// Helper to map timezone to our supported regions
 const detectUserRegion = (): string => {
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    if (!tz) return 'APAC'; // Default fallback
-
+    if (!tz) return 'APAC';
     if (tz.includes('Australia') || tz.includes('Pacific/Auckland')) return 'ANZ';
     if (tz.includes('Asia/Shanghai') || tz.includes('Asia/Chongqing') || tz.includes('Asia/Urumqi')) return 'China';
     if (tz.includes('Asia/Dubai') || tz.includes('Asia/Riyadh') || tz.includes('Asia/Baghdad') || tz.includes('Asia/Kuwait')) return 'Middle East';
     if (tz.includes('Europe') || tz.includes('London') || tz.includes('Paris') || tz.includes('Berlin')) return 'Europe';
     if (tz.includes('America') || tz.includes('US') || tz.includes('Canada') || tz.includes('Sao_Paulo')) return 'Americas';
     if (tz.includes('Africa')) return 'Africa';
-    if (tz.includes('Asia')) return 'APAC'; // General Asia catch-all
-    
+    if (tz.includes('Asia')) return 'APAC';
     return 'Global';
   } catch (e) {
     return 'APAC';
   }
 };
 
-// Helper to extract a potential default country from timezone city
 const detectUserCountry = (): string => {
   try {
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     if (tz && tz.includes('/')) {
         const city = tz.split('/')[1].replace(/_/g, ' ');
-        // Basic mapping for major hubs
         if (city === 'Singapore') return 'Singapore';
         if (city === 'Hong Kong') return 'Hong Kong';
         if (city === 'Tokyo') return 'Japan';
@@ -57,7 +53,6 @@ const detectUserCountry = (): string => {
 };
 
 const App: React.FC = () => {
-  // Initialize state with detected defaults
   const [status, setStatus] = useState<ScanStatus>(ScanStatus.IDLE);
   const [data, setData] = useState<AgencyWin[]>([]);
   const [lastScanTime, setLastScanTime] = useState<string | null>(null);
@@ -66,116 +61,78 @@ const App: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [countryQuery, setCountryQuery] = useState<string>(detectUserCountry());
   const [mediaQuery, setMediaQuery] = useState<string>('All Media');
+  const [recentPulseSearches, setRecentPulseSearches] = useState<PulseSearchHistoryItem[]>([]);
 
-  // News State - Defaulting to detected region
   const [newsItems, setNewsItems] = useState<NewsItem[]>([]);
   const [newsLoading, setNewsLoading] = useState<boolean>(true);
   const [newsRegion, setNewsRegion] = useState<string>(detectUserRegion());
 
-  // OOH Campaign State - Defaulting to detected region
   const [oohItems, setOohItems] = useState<NewsItem[]>([]);
   const [oohLoading, setOohLoading] = useState<boolean>(true);
   const [oohRegion, setOohRegion] = useState<string>(detectUserRegion());
 
-  // User Management State
   const [user, setUser] = useState<UserProfile | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
-  const [isSubscribersModalOpen, setIsSubscribersModalOpen] = useState<boolean>(false);
+  const [isAdminPanelOpen, setIsAdminPanelOpen] = useState<boolean>(false);
   const [loginToast, setLoginToast] = useState<string | null>(null);
 
-  // Load user from local storage on init
   useEffect(() => {
+    // Check for admin URL param to open dashboard directly
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('admin') === 'true') {
+        setIsAdminPanelOpen(true);
+    }
+
     const savedUser = localStorage.getItem('apacMarketIntelUser');
     if (savedUser) {
       try {
-        setUser(JSON.parse(savedUser));
+        const parsedUser = JSON.parse(savedUser);
+        if (!parsedUser.role) parsedUser.role = 'subscriber';
+        setUser(parsedUser);
       } catch (e) {
         console.error("Failed to parse user profile", e);
       }
     }
+    setRecentPulseSearches(getPulseSearchHistory());
   }, []);
 
   const handleLogin = async (profile: UserProfile) => {
-    // Optimistically log in locally first
     setUser(profile);
     localStorage.setItem('apacMarketIntelUser', JSON.stringify(profile));
     setIsLoginModalOpen(false);
 
-    let message = "Subscribed locally.";
+    if (profile.role === 'admin') {
+      setLoginToast("Welcome back, Administrator.");
+    } else {
+      subscribeToMailchimp(profile.email)
+        .then(response => {
+          if(response.result === 'error') console.warn('Mailchimp warning:', response.msg);
+        })
+        .catch(err => console.error('Mailchimp error:', err));
 
-    // 1. Mailchimp Subscription
-    try {
-      const mcResponse = await subscribeToMailchimp(profile.email);
-      if (mcResponse.result === 'success') {
-         message = "Success! Please check your email to confirm subscription.";
-      } else if (mcResponse.msg.includes("already subscribed")) {
-         message = "Welcome back! You are already on our list.";
-      } else {
-         console.warn("Mailchimp warning:", mcResponse.msg);
-         // Keep local success message but log warning, or show brief error
-         const shortMsg = mcResponse.msg.length > 40 ? mcResponse.msg.substring(0, 40) + '...' : mcResponse.msg;
-         message = `Subscribed locally. (${shortMsg})`;
+      try {
+        await saveSubscriberToSupabase(profile);
+        setLoginToast("Success! You are subscribed.");
+      } catch (err) {
+        console.error(err);
+        setLoginToast("Subscribed locally! (Database sync failed)");
       }
-    } catch (mcError) {
-      console.error("Mailchimp error:", mcError);
     }
-
-    // 2. Attempt Supabase Sync
-    if (isSupabaseConfigured()) {
-        try {
-            await subscribeUser(profile);
-            // If Mailchimp was effectively a success or handled, update message to reflect DB sync too
-            if (message === "Subscribed locally.") {
-               message = `Success! Your weekly digest will be sent to ${profile.email}.`;
-            }
-        } catch (err: any) {
-            console.error("Subscription process error:", err);
-            
-            // Check for Schema/Table missing error (PGRST205)
-            const isTableMissing = 
-                err.code === 'PGRST205' || 
-                (err.message && err.message.includes('subscribers') && err.message.includes('cache'));
-
-            // Check for Auth/Email errors (often 500s or specific messages about invite)
-            const isEmailError = err.message && (
-                err.message.includes('invite') || 
-                err.message.includes('email') || 
-                err.status === 500
-            );
-
-            if (isTableMissing) {
-                alert("Database Setup Required: The 'subscribers' table does not exist. Please check the 'Admin: Subscribers' view for setup instructions.");
-            } else if (isEmailError) {
-                console.warn("Server-side email error detected.");
-            } else if (err.message !== 'MISSING_CREDENTIALS') {
-                console.warn("Supabase sync issue:", err.message);
-            }
-        }
-    }
-
-    setLoginToast(message);
     setTimeout(() => setLoginToast(null), 5000);
   };
 
   const handleLogout = () => {
     setUser(null);
     localStorage.removeItem('apacMarketIntelUser');
+    setIsAdminPanelOpen(false);
   };
 
   const handleUnsubscribe = async () => {
     if (window.confirm("Are you sure you want to unsubscribe from the weekly digest?")) {
-      try {
-        if (user?.email && isSupabaseConfigured()) {
-            await unsubscribeUser(user.email);
-        }
-        setUser(null);
-        localStorage.removeItem('apacMarketIntelUser');
-        setLoginToast("You have been unsubscribed.");
-        setTimeout(() => setLoginToast(null), 3000);
-      } catch (err) {
-        console.error("Error unsubscribing:", err);
-        alert("There was an issue processing your unsubscribe request.");
-      }
+      setUser(null);
+      localStorage.removeItem('apacMarketIntelUser');
+      setLoginToast("You have been unsubscribed.");
+      setTimeout(() => setLoginToast(null), 3000);
     }
   };
 
@@ -203,7 +160,6 @@ const App: React.FC = () => {
     }
   }, [oohRegion]);
 
-  // Initial Data Fetches
   useEffect(() => {
     loadDailyNews();
   }, [loadDailyNews]);
@@ -212,12 +168,26 @@ const App: React.FC = () => {
     loadOOHCampaigns();
   }, [loadOOHCampaigns]);
 
-  const handleScan = useCallback(async () => {
+  const executeScan = async (client: string, country: string, media: string) => {
     setStatus(ScanStatus.SCANNING);
     setError(null);
-    setData([]); // Clear previous data
+    setData([]);
+    
+    logPulseSearchToSupabase(client, country, media); // No email passed
+    
+    // Save to local history if it's not a generic "empty" scan
+    if (client || (country && country !== detectUserCountry()) || media !== 'All Media') {
+        const updated = addPulseSearchHistory({
+            clientQuery: client,
+            countryQuery: country,
+            mediaQuery: media,
+            timestamp: Date.now()
+        });
+        setRecentPulseSearches(updated);
+    }
+
     try {
-      const results = await scanMarketIntelligence(searchQuery, countryQuery, mediaQuery);
+      const results = await scanMarketIntelligence(client, country, media);
       setData(results);
       setLastScanTime(new Date().toLocaleString());
       setStatus(ScanStatus.COMPLETED);
@@ -226,7 +196,11 @@ const App: React.FC = () => {
       setError("Failed to retrieve market intelligence. Please check your connection and API key.");
       setStatus(ScanStatus.ERROR);
     }
-  }, [searchQuery, countryQuery, mediaQuery]);
+  };
+
+  const handleScan = useCallback(() => {
+    executeScan(searchQuery, countryQuery, mediaQuery);
+  }, [searchQuery, countryQuery, mediaQuery, user]);
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && status !== ScanStatus.SCANNING) {
@@ -234,23 +208,38 @@ const App: React.FC = () => {
     }
   };
 
+  const handleHistoryClick = (item: PulseSearchHistoryItem) => {
+      setSearchQuery(item.clientQuery);
+      setCountryQuery(item.countryQuery);
+      setMediaQuery(item.mediaQuery);
+      executeScan(item.clientQuery, item.countryQuery, item.mediaQuery);
+  };
+
+  // If Admin param is present, render Admin Dashboard exclusively
+  if (isAdminPanelOpen) {
+    return <AdminDashboard isOpen={true} onClose={() => {
+        setIsAdminPanelOpen(false);
+        // Clear query param without refreshing
+        window.history.replaceState({}, document.title, window.location.pathname);
+    }} />;
+  }
+
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen text-slate-800 flex flex-col font-sans">
       <Header 
         user={user} 
         onLoginClick={() => setIsLoginModalOpen(true)} 
         onLogoutClick={handleLogout} 
         onUnsubscribeClick={handleUnsubscribe}
-        onSubscribersClick={() => setIsSubscribersModalOpen(true)}
+        onSubscribersClick={() => window.open(window.location.pathname + '?admin=true', '_blank')} 
       />
 
-      {/* Login/Subscription Toast */}
       {loginToast && (
-        <div className="fixed bottom-4 right-4 z-50 bg-slate-800 text-white px-6 py-3 rounded-lg shadow-lg flex items-center transition-all duration-500 ease-in-out animate-bounce">
-          <svg className="w-6 h-6 mr-2 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <div className="fixed bottom-6 right-6 z-50 bg-slate-900/90 backdrop-blur text-white px-6 py-4 rounded-2xl shadow-2xl flex items-center transition-all animate-bounce border border-slate-700">
+          <svg className="w-6 h-6 mr-3 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
-          {loginToast}
+          <span className="font-medium">{loginToast}</span>
         </div>
       )}
 
@@ -260,20 +249,15 @@ const App: React.FC = () => {
         onLogin={handleLogin} 
       />
 
-      <SubscribersListModal
-        isOpen={isSubscribersModalOpen}
-        onClose={() => setIsSubscribersModalOpen(false)}
-      />
-
-      <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-12">
+      <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-16">
         
-        {/* NEW Master Search Section */}
-        <section id="master-search">
+        {/* Business Intelligence Search */}
+        <section id="business-search">
            <MasterSearchSection />
         </section>
 
-        {/* Daily News Section */}
-        <section id="daily-briefing" className="scroll-mt-24">
+        {/* Daily News */}
+        <section id="daily-briefing" className="scroll-mt-32">
           <DailyBriefing 
             news={newsItems} 
             isLoading={newsLoading} 
@@ -283,134 +267,118 @@ const App: React.FC = () => {
           />
         </section>
 
-        {/* Weekly Pulse Scanner (Existing) */}
-        <div id="market-scanner" className="scroll-mt-24 bg-white rounded-xl p-6 shadow-sm border border-slate-200 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-6">
-          <div className="max-w-md">
-            <h2 className="text-2xl font-bold text-slate-900">Weekly Pulse Scanner</h2>
-            <p className="text-slate-500 mt-1">
-              Structured table of agency appointments and reviews.
-            </p>
+        {/* Weekly Pulse Scanner */}
+        <div id="market-scanner" className="scroll-mt-32 glass-panel rounded-3xl p-8 shadow-xl">
+          <div className="flex flex-col lg:flex-row justify-between items-start lg:items-end gap-6 mb-8 border-b border-slate-100 pb-8">
+             <div>
+                <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight">Weekly Pulse Scanner</h2>
+                <p className="text-slate-500 mt-2 text-lg">
+                  Intelligence gathering from premier global sources.
+                </p>
+             </div>
+             {lastScanTime && (
+                <div className="bg-slate-50 px-4 py-2 rounded-lg border border-slate-100 text-sm">
+                   <span className="text-slate-400 uppercase font-bold text-xs tracking-wider">Last Scan:</span> <span className="text-slate-700 font-semibold">{lastScanTime}</span>
+                </div>
+             )}
           </div>
           
-          <div className="flex-1 w-full flex flex-col md:flex-row items-center gap-4 justify-end">
-             
-             {/* Search Inputs Container */}
-             <div className="flex flex-col sm:flex-row gap-3 w-full lg:max-w-4xl">
-                {/* Client/Agency Input */}
-                <div className="relative flex-grow min-w-[200px]">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                    </svg>
-                  </div>
-                  <input
-                    type="text"
-                    className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-lg leading-5 bg-slate-50 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent sm:text-sm transition duration-150 ease-in-out"
-                    placeholder="Client or Agency..."
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    onKeyDown={handleKeyPress}
-                  />
+          <div className="flex flex-col lg:flex-row gap-4 mb-4">
+              <div className="flex-1 relative">
+                <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                  <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
                 </div>
+                <input
+                  type="text"
+                  className="block w-full pl-11 pr-4 py-4 border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium text-slate-700 placeholder-slate-400"
+                  placeholder="Client or Agency..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onKeyDown={handleKeyPress}
+                />
+              </div>
 
-                {/* Country Input */}
-                <div className="relative w-full sm:w-40 lg:w-52">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                  </div>
-                  <input
+              <div className="w-full lg:w-64 relative">
+                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none text-slate-400">
+                    <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                 </div>
+                 <input
                     type="text"
-                    className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-lg leading-5 bg-slate-50 placeholder-slate-400 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent sm:text-sm transition duration-150 ease-in-out"
+                    className="block w-full pl-11 pr-4 py-4 border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium text-slate-700 placeholder-slate-400"
                     placeholder="Country..."
                     value={countryQuery}
                     onChange={(e) => setCountryQuery(e.target.value)}
                     onKeyDown={handleKeyPress}
                   />
-                </div>
+              </div>
 
-                 {/* Media Type Dropdown */}
-                 <div className="relative w-full sm:w-44 lg:w-48">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                       <svg className="h-5 w-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                       </svg>
-                    </div>
-                    <select
-                      className="block w-full pl-10 pr-8 py-3 border border-slate-200 rounded-lg leading-5 bg-slate-50 text-slate-600 focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-transparent sm:text-sm appearance-none transition duration-150 ease-in-out cursor-pointer"
-                      value={mediaQuery}
-                      onChange={(e) => setMediaQuery(e.target.value)}
-                    >
-                      {MEDIA_TYPES.map((type) => (
-                        <option key={type} value={type}>{type}</option>
-                      ))}
-                    </select>
-                    <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-600">
-                      <svg className="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
-                    </div>
-                 </div>
+              <div className="w-full lg:w-56 relative">
+                 <select
+                    className="block w-full pl-4 pr-10 py-4 border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 transition-all font-medium text-slate-700 appearance-none cursor-pointer"
+                    value={mediaQuery}
+                    onChange={(e) => setMediaQuery(e.target.value)}
+                  >
+                    {MEDIA_TYPES.map((type) => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                  <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500">
+                    <svg className="h-4 w-4 fill-current" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                  </div>
+              </div>
 
-             </div>
-
-            <div className="flex items-center gap-4 w-full md:w-auto">
-              {lastScanTime && (
-                <div className="text-right hidden 2xl:block whitespace-nowrap">
-                  <div className="text-xs text-slate-400 font-medium uppercase tracking-wide">Last Scan</div>
-                  <div className="text-sm text-slate-700 font-medium">{lastScanTime}</div>
-                </div>
-              )}
-              
               <button
                 onClick={handleScan}
                 disabled={status === ScanStatus.SCANNING}
-                className={`
-                  w-full md:w-auto whitespace-nowrap flex items-center justify-center gap-2 px-6 py-3 rounded-lg font-semibold shadow-sm transition-all
-                  ${status === ScanStatus.SCANNING 
-                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
-                    : 'bg-blue-600 text-white hover:bg-blue-700 hover:shadow-md active:transform active:scale-95'}
-                `}
+                className="w-full lg:w-auto whitespace-nowrap px-8 py-4 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-blue-500/30 hover:shadow-blue-500/40 hover:-translate-y-0.5 active:translate-y-0 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 {status === ScanStatus.SCANNING ? (
                   <>
-                    <svg className="animate-spin -ml-1 mr-2 h-5 w-5 text-slate-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
+                    <svg className="animate-spin -ml-1 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                     Scanning...
                   </>
-                ) : (
-                  <>
-                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                      </svg>
-                      Run Weekly Scan
-                  </>
-                )}
+                ) : 'Run Weekly Scan'}
               </button>
-            </div>
           </div>
+
+          {recentPulseSearches.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-8 items-center">
+               <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-2 flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  Recent:
+               </span>
+               {recentPulseSearches.map((item, idx) => (
+                 <button
+                   key={idx}
+                   onClick={() => handleHistoryClick(item)}
+                   disabled={status === ScanStatus.SCANNING}
+                   className="px-2.5 py-1 rounded bg-slate-50 border border-slate-200 text-[10px] font-medium text-slate-500 hover:text-blue-600 hover:border-blue-200 hover:bg-white transition-colors shadow-sm"
+                 >
+                   {item.clientQuery || 'All Clients'} • {item.countryQuery || 'APAC'} • {item.mediaQuery}
+                 </button>
+               ))}
+            </div>
+          )}
+
+          {error && (
+            <div className="bg-rose-50 border border-rose-100 text-rose-600 px-4 py-3 rounded-xl flex items-center mb-6 font-medium">
+               <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
+               {error}
+            </div>
+          )}
+
+          <section>
+             <IntelligenceTable data={data} isLoading={status === ScanStatus.SCANNING} />
+          </section>
         </div>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg flex items-center">
-             <svg className="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" /></svg>
-             {error}
-          </div>
-        )}
-
-        {/* Results Section */}
-        <section>
-           <IntelligenceTable data={data} isLoading={status === ScanStatus.SCANNING} />
-        </section>
-
-        {/* Leadership Scanner Section */}
-        <section id="leadership-scanner" className="scroll-mt-24">
+        {/* Leadership Scanner */}
+        <section id="leadership-scanner" className="scroll-mt-32">
           <LeadershipScanner />
         </section>
 
-        {/* OOH Campaign Updates */}
-        <section id="ooh-updates" className="scroll-mt-24">
+        {/* OOH */}
+        <section id="ooh-updates" className="scroll-mt-32">
            <OOHCampaigns
              campaigns={oohItems}
              isLoading={oohLoading}
@@ -420,15 +388,15 @@ const App: React.FC = () => {
            />
         </section>
 
-        {/* Sources Grid */}
-        <section id="sources" className="scroll-mt-24">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-slate-800">Monitored Intelligence Sources</h3>
-            <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
-              {SOURCES.length} Active Streams
+        {/* Sources */}
+        <section id="sources" className="scroll-mt-32">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xl font-bold text-slate-800">Monitored Sources</h3>
+            <span className="text-xs font-bold px-3 py-1 rounded-full bg-slate-200 text-slate-600">
+              {SOURCES.length} Active
             </span>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
             {SOURCES.map((source) => (
               <SourceCard key={source.name} source={source} />
             ))}
@@ -437,14 +405,15 @@ const App: React.FC = () => {
 
       </main>
       
-      <footer className="bg-white border-t border-slate-200 py-8 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 text-center text-slate-400 text-sm">
-          <p>&copy; {new Date().getFullYear()} Rocket Insights. All rights reserved.</p>
-          <p className="mt-2">Data provided by Google Gemini Search Grounding.</p>
+      <footer className="glass-panel border-t border-white/50 py-10 mt-auto backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-4 text-center text-slate-500 text-sm">
+          <p className="font-semibold text-slate-600 mb-2">&copy; {new Date().getFullYear()} Rocket Insights. All rights reserved.</p>
+          <div className="flex justify-center gap-4 mt-4">
+             <span>Powered by Google Gemini Search Grounding</span>
+          </div>
         </div>
       </footer>
     </div>
   );
 };
-
 export default App;
