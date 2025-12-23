@@ -1,17 +1,16 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NEWS_REGIONS, NEWS_TOPICS } from '../constants';
 import { UserProfile } from '../types';
 
 interface LoginModalProps {
   isOpen: boolean;
+  mode: 'subscribe' | 'admin';
   onClose: () => void;
   onLogin: (profile: UserProfile) => void;
 }
 
-export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin }) => {
-  const [mode, setMode] = useState<'subscribe' | 'admin'>('subscribe');
-  
+export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, mode, onClose, onLogin }) => {
   // Subscribe State
   const [email, setEmail] = useState('');
   const [selectedRegions, setSelectedRegions] = useState<string[]>(['APAC']);
@@ -23,15 +22,29 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
   const [adminPassword, setAdminPassword] = useState('');
   const [adminError, setAdminError] = useState('');
   
-  if (!isOpen) return null;
+  // Animation state
+  const [shouldRender, setShouldRender] = useState(isOpen);
+
+  useEffect(() => {
+    if (isOpen) setShouldRender(true);
+  }, [isOpen]);
+
+  const handleAnimationEnd = () => {
+    if (!isOpen) setShouldRender(false);
+  };
+
+  if (!shouldRender) return null;
 
   const handleSubscribeSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!email || !hasConsented) return;
 
+    // nmurthy27@gmail.com is hardcoded as Super Admin
+    const isSuperUser = email.toLowerCase() === 'nmurthy27@gmail.com';
+
     const profile: UserProfile = {
       email,
-      role: 'subscriber',
+      role: isSuperUser ? 'super_admin' : 'read_only', // New users are strictly read_only by default
       regions: selectedRegions,
       topics: selectedTopics,
       isSubscribed: true,
@@ -45,15 +58,25 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
     e.preventDefault();
     setAdminError('');
 
-    // Simple authentication check for the prototype
-    if ((adminPassword === 'admin123' || adminPassword === 'rocket')) {
+    const lowCaseEmail = adminEmail.toLowerCase();
+    const isNMurthy = lowCaseEmail === 'nmurthy27@gmail.com';
+
+    // Logic for Super Admin vs Admin
+    if (adminPassword === 'rocket') {
+      const isSuper = isNMurthy || adminEmail.includes('ceo') || adminEmail.includes('admin');
       const profile: UserProfile = {
         email: adminEmail,
-        role: 'admin'
+        role: isSuper ? 'super_admin' : 'admin'
+      };
+      onLogin(profile);
+    } else if (adminPassword === 'read') {
+       const profile: UserProfile = {
+        email: adminEmail,
+        role: 'read_only'
       };
       onLogin(profile);
     } else {
-      setAdminError('Invalid credentials. Please try again.');
+      setAdminError('Access denied. Verify institutional credentials.');
     }
   };
 
@@ -74,200 +97,175 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin
   };
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto" aria-labelledby="modal-title" role="dialog" aria-modal="true">
-      <div className="flex items-center justify-center min-h-screen px-4 pb-20 text-center sm:block sm:p-0">
-        {/* Background overlay */}
-        <div 
-          className="fixed inset-0 bg-slate-900 bg-opacity-75 transition-opacity backdrop-blur-sm" 
-          aria-hidden="true"
-          onClick={onClose}
-        ></div>
+    <div className={`fixed inset-0 z-[100] flex justify-end transition-opacity duration-300 ${isOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+      {/* Backdrop */}
+      <div 
+        className="absolute inset-0 bg-slate-950/40 backdrop-blur-md" 
+        onClick={onClose}
+      />
 
-        <span className="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
-        
-        <div className="relative inline-block align-bottom bg-white rounded-2xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg w-full">
-          
-          {/* Header Tabs */}
-          <div className="flex border-b border-slate-100">
-            <button
-              onClick={() => setMode('subscribe')}
-              className={`flex-1 py-4 text-sm font-bold text-center transition-colors ${mode === 'subscribe' ? 'bg-white text-blue-600 border-b-2 border-blue-600' : 'bg-slate-50 text-slate-500 hover:text-slate-700'}`}
-            >
-              Subscriber Access
-            </button>
-            <button
-              onClick={() => setMode('admin')}
-              className={`flex-1 py-4 text-sm font-bold text-center transition-colors ${mode === 'admin' ? 'bg-white text-indigo-600 border-b-2 border-indigo-600' : 'bg-slate-50 text-slate-500 hover:text-slate-700'}`}
-            >
-              Admin Login
-            </button>
+      {/* Drawer Panel */}
+      <div 
+        onTransitionEnd={handleAnimationEnd}
+        className={`relative w-full max-w-md bg-white h-full shadow-[-20px_0_50px_rgba(0,0,0,0.1)] transform transition-transform duration-500 ease-out flex flex-col ${isOpen ? 'translate-x-0' : 'translate-x-full'}`}
+      >
+        {/* Header */}
+        <div className="p-8 border-b border-slate-100 flex items-center justify-between bg-white shrink-0">
+          <div>
+            <h2 className="text-xl font-black text-slate-900 tracking-tight">
+              {mode === 'subscribe' ? 'Weekly Digest' : 'Control Center'}
+            </h2>
+            <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mt-1">
+              {mode === 'subscribe' ? 'Institutional Access' : 'Administrative Login'}
+            </p>
           </div>
+          <button 
+            onClick={onClose}
+            className="p-2 rounded-xl text-slate-400 hover:text-slate-900 hover:bg-slate-50 transition-all"
+          >
+            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
 
-          <div className="px-6 py-6">
-            {mode === 'subscribe' ? (
-              <form onSubmit={handleSubscribeSubmit}>
-                <div className="text-center mb-6">
-                  <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-blue-100 mb-3">
-                    <svg className="h-6 w-6 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-900">Subscribe to Intelligence Digest</h3>
-                  <p className="text-sm text-slate-500 mt-1">
-                    Get a consolidated report delivered to your inbox every Monday morning.
-                  </p>
+        {/* Scrollable Form Area */}
+        <div className="flex-1 overflow-y-auto custom-scrollbar p-8">
+          {mode === 'subscribe' ? (
+            <form onSubmit={handleSubscribeSubmit} className="space-y-8">
+              <div className="bg-indigo-50 p-6 rounded-2xl border border-indigo-100">
+                <p className="text-sm text-indigo-900 font-bold leading-relaxed">
+                  Join 12,000+ industry professionals receiving our high-signal APAC market brief every Monday morning.
+                </p>
+              </div>
+
+              {/* Email Input */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Work Email</label>
+                <input
+                  type="email"
+                  required
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-bold focus:ring-4 focus:ring-indigo-500/10 focus:border-indigo-500 focus:bg-white transition-all outline-none"
+                  placeholder="name@company.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                />
+              </div>
+
+              {/* Regions Selection */}
+              <div className="space-y-3">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Regional Focus</label>
+                <div className="flex flex-wrap gap-2">
+                  {NEWS_REGIONS.map(region => (
+                    <button
+                      key={region}
+                      type="button"
+                      onClick={() => toggleRegion(region)}
+                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                        selectedRegions.includes(region)
+                          ? 'bg-indigo-600 text-white border-indigo-600 shadow-lg shadow-indigo-100'
+                          : 'bg-white text-slate-500 border-slate-200 hover:border-indigo-400'
+                      }`}
+                    >
+                      {region}
+                    </button>
+                  ))}
                 </div>
+              </div>
 
-                {/* Email Input */}
-                <div className="mb-4">
-                  <label htmlFor="email" className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                    Email Address
-                  </label>
+              {/* Topics Selection */}
+              <div className="space-y-3">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Intel Categories</label>
+                <div className="flex flex-wrap gap-2">
+                  {NEWS_TOPICS.map(topic => (
+                    <button
+                      key={topic}
+                      type="button"
+                      onClick={() => toggleTopic(topic)}
+                      className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                        selectedTopics.includes(topic)
+                          ? 'bg-slate-900 text-white border-slate-900 shadow-lg shadow-slate-200'
+                          : 'bg-white text-slate-500 border-slate-200 hover:border-slate-900'
+                      }`}
+                    >
+                      {topic}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Consent Checkbox */}
+              <div className="p-5 bg-slate-50 rounded-2xl border border-slate-100 flex gap-4 cursor-pointer group" onClick={() => setHasConsented(!hasConsented)}>
+                <div className={`shrink-0 w-6 h-6 rounded-lg border-2 flex items-center justify-center transition-all ${hasConsented ? 'bg-indigo-600 border-indigo-600' : 'bg-white border-slate-300'}`}>
+                  {hasConsented && (
+                    <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>
+                  )}
+                </div>
+                <div>
+                  <p className="text-xs font-bold text-slate-700">Confirm Subscription</p>
+                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">I agree to receive the weekly intelligence digest. One-click unsubscribe always available.</p>
+                </div>
+              </div>
+
+              <button
+                type="submit"
+                disabled={!email || !hasConsented}
+                className="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-indigo-200 hover:bg-indigo-700 transition-all active:scale-95 disabled:opacity-50"
+              >
+                Activate Subscription
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={handleAdminLogin} className="space-y-8">
+              <div className="bg-slate-900 p-6 rounded-2xl text-white shadow-xl">
+                <p className="text-xs font-bold leading-relaxed opacity-70 uppercase tracking-widest">Administrative access required for intelligence log management and subscriber auditing.</p>
+              </div>
+
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Admin ID</label>
                   <input
                     type="email"
-                    name="email"
-                    id="email"
                     required
-                    className="block w-full border border-slate-300 rounded-xl shadow-sm py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm"
-                    placeholder="you@company.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-bold focus:ring-4 focus:ring-slate-500/10 focus:border-slate-900 focus:bg-white transition-all outline-none"
+                    placeholder="admin@rocketinsights.co"
+                    value={adminEmail}
+                    onChange={(e) => setAdminEmail(e.target.value)}
                   />
                 </div>
-
-                {/* Regions Selection */}
-                <div className="mb-4">
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    Select Regions
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {NEWS_REGIONS.map(region => (
-                      <button
-                        key={region}
-                        type="button"
-                        onClick={() => toggleRegion(region)}
-                        className={`inline-flex items-center px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                          selectedRegions.includes(region)
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-200'
-                            : 'bg-white text-slate-600 border-slate-200 hover:border-blue-300'
-                        }`}
-                      >
-                        {region}
-                      </button>
-                    ))}
-                  </div>
+                
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.2em]">Protocol Key</label>
+                  <input
+                    type="password"
+                    required
+                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-4 text-sm font-bold focus:ring-4 focus:ring-slate-500/10 focus:border-slate-900 focus:bg-white transition-all outline-none"
+                    placeholder="Enter key (e.g. 'rocket' or 'read')"
+                    value={adminPassword}
+                    onChange={(e) => setAdminPassword(e.target.value)}
+                  />
                 </div>
+              </div>
 
-                {/* Topics Selection */}
-                <div className="mb-5">
-                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">
-                    Customize Topics
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {NEWS_TOPICS.map(topic => (
-                      <button
-                        key={topic}
-                        type="button"
-                        onClick={() => toggleTopic(topic)}
-                        className={`inline-flex items-center px-2.5 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                          selectedTopics.includes(topic)
-                            ? 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-200'
-                            : 'bg-white text-slate-600 border-slate-200 hover:border-purple-300'
-                        }`}
-                      >
-                        {topic}
-                      </button>
-                    ))}
-                  </div>
+              {adminError && (
+                <div className="p-4 bg-rose-50 text-rose-600 text-[10px] font-black uppercase tracking-widest rounded-xl border border-rose-100 flex items-center gap-3">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  {adminError}
                 </div>
+              )}
 
-                {/* Consent Checkbox */}
-                <div className="mb-6 p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="flex items-start">
-                    <div className="flex items-center h-5">
-                      <input
-                        id="consent"
-                        name="consent"
-                        type="checkbox"
-                        required
-                        checked={hasConsented}
-                        onChange={(e) => setHasConsented(e.target.checked)}
-                        className="focus:ring-blue-500 h-4 w-4 text-blue-600 border-slate-300 rounded"
-                      />
-                    </div>
-                    <div className="ml-3 text-sm">
-                      <label htmlFor="consent" className="font-medium text-slate-700">I agree to receive the weekly digest.</label>
-                      <p className="text-slate-500 text-xs mt-0.5">You can unsubscribe at any time.</p>
-                    </div>
-                  </div>
-                </div>
+              <button
+                type="submit"
+                className="w-full py-5 bg-slate-900 text-white rounded-2xl font-black text-xs uppercase tracking-[0.2em] shadow-2xl shadow-slate-200 hover:bg-slate-800 transition-all active:scale-95"
+              >
+                Authenticate Access
+              </button>
+            </form>
+          )}
+        </div>
 
-                <button
-                  type="submit"
-                  disabled={!email || !hasConsented}
-                  className="w-full inline-flex justify-center rounded-xl border border-transparent shadow-lg shadow-blue-500/30 px-4 py-3 bg-blue-600 text-base font-bold text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                >
-                  Subscribe
-                </button>
-              </form>
-            ) : (
-              <form onSubmit={handleAdminLogin}>
-                <div className="text-center mb-6">
-                  <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-indigo-100 mb-3">
-                    <svg className="h-6 w-6 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                    </svg>
-                  </div>
-                  <h3 className="text-lg font-bold text-slate-900">Admin Login</h3>
-                  <p className="text-sm text-slate-500 mt-1">
-                    Access the dashboard to view logs and manage subscribers.
-                  </p>
-                </div>
-
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Admin Email
-                    </label>
-                    <input
-                      type="email"
-                      required
-                      className="block w-full border border-slate-300 rounded-xl shadow-sm py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                      value={adminEmail}
-                      onChange={(e) => setAdminEmail(e.target.value)}
-                    />
-                  </div>
-                  
-                  <div>
-                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">
-                      Password
-                    </label>
-                    <input
-                      type="password"
-                      required
-                      className="block w-full border border-slate-300 rounded-xl shadow-sm py-2.5 px-3 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm"
-                      value={adminPassword}
-                      onChange={(e) => setAdminPassword(e.target.value)}
-                    />
-                  </div>
-                </div>
-
-                {adminError && (
-                  <div className="mt-4 p-3 bg-red-50 text-red-600 text-sm font-medium rounded-lg border border-red-100 flex items-center gap-2">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    {adminError}
-                  </div>
-                )}
-
-                <button
-                  type="submit"
-                  className="w-full mt-6 inline-flex justify-center rounded-xl border border-transparent shadow-lg shadow-indigo-500/30 px-4 py-3 bg-indigo-600 text-base font-bold text-white hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 transition-all"
-                >
-                  Login to Dashboard
-                </button>
-              </form>
-            )}
-          </div>
+        <div className="p-8 border-t border-slate-50 text-center bg-slate-50/50">
+          <p className="text-[9px] font-black text-slate-400 uppercase tracking-[0.3em]">Rocket Insights Intelligence Hub &copy; 2025</p>
         </div>
       </div>
     </div>

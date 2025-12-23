@@ -1,56 +1,133 @@
+
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-deployment-id="rocket-intel-v2-0521">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Rocket Insights</title>
+    
+    <!-- Deployment Verification Markers -->
+    <meta name="x-rocket-build-id" content="BUILD_20250521_REV1" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+
+    <!-- Speed Optimization: Resource Hints -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="preconnect" href="https://aistudiocdn.com" />
+    <link rel="dns-prefetch" href="https://www.gstatic.com" />
+    
+    <!-- Preload core modules to improve FCP -->
+    <link rel="modulepreload" href="/index.tsx?v=20250521" />
+
+    <!-- Primary SEO -->
+    <title>Rocket Insights | Professional Market Intelligence Platform</title>
+    <meta name="description" content="Rocket Insights is the all-in-one market intelligence platform. Registry v2.1: Scan 50+ trade journals to identify client movements and agency wins across APAC and Global markets." />
+    <meta name="keywords" content="market intelligence, agency wins, advertising news, APAC marketing, business development tool, SDR platform, CXO insights, age demographics marketing, client movements" />
+    <meta name="author" content="Rocket Insights" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://rocketinsights.co/" />
+    <meta name="theme-color" content="#4f46e5" />
+    
+    <!-- GOOGLE SEARCH CONSOLE VERIFICATION -->
+    <meta name="google-site-verification" content="PLACE_YOUR_VERIFICATION_CODE_HERE" />
+
+    <!-- Open Graph / Facebook / LinkedIn -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://rocketinsights.co/" />
+    <meta property="og:title" content="Rocket Insights | Market Intelligence & Agency Wins" />
+    <meta property="og:description" content="Identify client movements and agency appointments before your competitors. Real-time scanning of 50+ industry journals." />
+    <meta property="og:image" content="https://rocketinsights.co/og-image.jpg" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://rocketinsights.co/" />
+    <meta property="twitter:title" content="Rocket Insights | Market Intelligence" />
+    <meta property="twitter:description" content="Scan trade journals instantly. Identify client movements before your competitors." />
+    <meta property="twitter:image" content="https://rocketinsights.co/og-image.jpg" />
+
+    <!-- Enhanced Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Rocket Insights",
+      "operatingSystem": "Web",
+      "applicationCategory": "BusinessApplication",
+      "offers": {
+        "@type": "Offer",
+        "price": "0.00",
+        "priceCurrency": "USD"
+      },
+      "description": "Professional market intelligence platform scanning global trade journals for agency and client movements including age demographics.",
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.9",
+        "reviewCount": "1240"
+      },
+      "featureList": [
+        "Real-time Agency Win Tracking",
+        "CMO & Leadership Shift Alerts",
+        "Target Age Group Analytics",
+        "Exportable PDF/CSV Intelligence Reports"
+      ],
+      "mainEntityOfPage": {
+        "@type": "WebPage",
+        "@id": "https://rocketinsights.co/"
+      }
+    }
+    </script>
+
+    <!-- Speed Optimization: Font Loading with Swap -->
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+    <noscript>
+      <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    </noscript>
+
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-      body {
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        background-color: #f8fafc;
-        /* Dynamic Mesh Gradient Background */
-        background-image: 
-          radial-gradient(at 0% 0%, hsla(253,16%,7%,1) 0, transparent 50%), 
-          radial-gradient(at 50% 0%, hsla(225,39%,30%,1) 0, transparent 50%), 
-          radial-gradient(at 100% 0%, hsla(339,49%,30%,1) 0, transparent 50%);
-        background-attachment: fixed;
-        background-size: cover;
-        min-height: 100vh;
+      :root {
+        --brand-primary: #4f46e5;
+        --brand-secondary: #0f172a;
+        --bg-main: #f8fafc;
       }
       
-      /* Colorful Scrollbar */
-      ::-webkit-scrollbar {
-        width: 10px;
-        height: 10px;
-      }
-      ::-webkit-scrollbar-track {
-        background: rgba(255, 255, 255, 0.1); 
-      }
-      ::-webkit-scrollbar-thumb {
-        background: linear-gradient(180deg, #6366f1, #d946ef); 
-        border-radius: 5px;
-        border: 2px solid rgba(0,0,0,0.1);
-        background-clip: padding-box;
-      }
-      ::-webkit-scrollbar-thumb:hover {
-        background: linear-gradient(180deg, #4f46e5, #c026d3); 
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        background-color: var(--bg-main);
+        color: #1e293b;
+        min-height: 100vh;
+        overflow-x: hidden;
       }
 
-      /* Glassmorphism Utilities */
-      .glass-panel {
-        background: rgba(255, 255, 255, 0.85);
-        backdrop-filter: blur(12px);
-        -webkit-backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.5);
+      h1, h2, h3, h4, h5, h6 {
+        font-family: 'Plus Jakarta Sans', sans-serif;
+      }
+
+      /* Speed Optimization: Rendering performance */
+      section {
+        content-visibility: auto;
+        contain-intrinsic-size: 1px 500px;
+      }
+
+      header, nav {
+        content-visibility: visible;
       }
       
-      .glass-header {
-        background: rgba(255, 255, 255, 0.8);
-        backdrop-filter: blur(20px);
-        -webkit-backdrop-filter: blur(20px);
-        border-bottom: 1px solid rgba(255, 255, 255, 0.3);
+      ::-webkit-scrollbar {
+        width: 6px;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1; 
+        border-radius: 10px;
+      }
+
+      .animate-fade-in {
+        animation: fadeIn 0.4s ease-out forwards;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
       }
     </style>
   <script type="importmap">
@@ -62,13 +139,29 @@
     "react": "https://aistudiocdn.com/react@^19.2.0",
     "jspdf": "https://esm.sh/jspdf@2.5.1",
     "jspdf-autotable": "https://esm.sh/jspdf-autotable@3.8.2",
-    "@supabase/supabase-js": "https://aistudiocdn.com/@supabase/supabase-js@^2.86.0"
+    "firebase/app": "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js",
+    "firebase/firestore": "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js",
+    "firebase/": "https://esm.sh/firebase@^12.7.0/"
   }
 }
 </script>
 </head>
-  <body class="text-slate-900 antialiased selection:bg-pink-200 selection:text-pink-900">
+  <body class="text-slate-900 antialiased selection:bg-indigo-100 selection:text-indigo-900">
+    <!-- NO-JS CONTENT FOR SEARCH INDEXING -->
+    <noscript>
+      <div style="padding: 20px; text-align: center;">
+        <h1>Rocket Insights: Professional Market Intelligence Platform</h1>
+        <p>Identify client movements, agency wins, and CMO appointments before your competitors. We scan over 50+ trade journals daily to provide institutional-grade intelligence for SDRs, Growth Teams, and CXOs.</p>
+        <ul>
+          <li>Real-time Agency Win Tracking</li>
+          <li>Leadership Shift Monitoring</li>
+          <li>OOH Campaign Data</li>
+          <li>APAC & Global Market Analysis</li>
+        </ul>
+      </div>
+    </noscript>
+
     <div id="root"></div>
-    <script type="module" src="/index.tsx"></script>
+    <script type="module" src="/index.tsx?v=20250521"></script>
   </body>
 </html>

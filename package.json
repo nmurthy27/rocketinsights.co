@@ -1,5 +1,5 @@
 {
-  "name": "rocket-insights",
+  "name": "rocket-insights-intelligence-platform",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -14,7 +14,7 @@
     "react": "^19.2.0",
     "jspdf": "2.5.1",
     "jspdf-autotable": "3.8.2",
-    "@supabase/supabase-js": "^2.86.0"
+    "firebase": "^12.7.0"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

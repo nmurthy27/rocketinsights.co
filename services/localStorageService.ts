@@ -1,10 +1,12 @@
 
-import { PulseSearchHistoryItem, LeadershipSearchHistoryItem } from '../types';
+import { PulseSearchHistoryItem, LeadershipSearchHistoryItem, SavedEmail } from '../types';
 
 const MASTER_HISTORY_KEY = 'rocket_master_history';
 const PULSE_HISTORY_KEY = 'rocket_pulse_history';
 const LEADERSHIP_HISTORY_KEY = 'rocket_leadership_history';
+const EMAIL_HISTORY_KEY = 'rocket_email_history';
 const MAX_HISTORY_ITEMS = 5;
+const MAX_EMAIL_HISTORY = 50;
 
 // Generic helper to get history
 const getHistory = <T>(key: string): T[] => {
@@ -18,7 +20,7 @@ const getHistory = <T>(key: string): T[] => {
 };
 
 // Generic helper to save history (LIFO with max limit)
-const addToHistory = <T>(key: string, newItem: T, comparisonFn: (a: T, b: T) => boolean) => {
+const addToHistory = <T>(key: string, newItem: T, comparisonFn: (a: T, b: T) => boolean, limit = MAX_HISTORY_ITEMS) => {
   try {
     let current = getHistory<T>(key);
     // Remove duplicates
@@ -26,8 +28,8 @@ const addToHistory = <T>(key: string, newItem: T, comparisonFn: (a: T, b: T) => 
     // Add new item to top
     current.unshift(newItem);
     // Trim to max length
-    if (current.length > MAX_HISTORY_ITEMS) {
-      current = current.slice(0, MAX_HISTORY_ITEMS);
+    if (current.length > limit) {
+      current = current.slice(0, limit);
     }
     localStorage.setItem(key, JSON.stringify(current));
     return current;
@@ -80,6 +82,27 @@ export const addLeadershipSearchHistory = (item: LeadershipSearchHistoryItem): L
       a.company.toLowerCase() === b.company.toLowerCase() &&
       a.country.toLowerCase() === b.country.toLowerCase()
   );
+};
+
+// --- Email History ---
+export const getEmailHistory = (): SavedEmail[] => {
+  return getHistory<SavedEmail>(EMAIL_HISTORY_KEY);
+};
+
+export const saveEmailToHistory = (email: SavedEmail): SavedEmail[] => {
+  return addToHistory<SavedEmail>(
+    EMAIL_HISTORY_KEY,
+    email,
+    (a, b) => a.id === b.id,
+    MAX_EMAIL_HISTORY
+  );
+};
+
+export const deleteEmailFromHistory = (id: string): SavedEmail[] => {
+  const history = getHistory<SavedEmail>(EMAIL_HISTORY_KEY);
+  const updated = history.filter(e => e.id !== id);
+  localStorage.setItem(EMAIL_HISTORY_KEY, JSON.stringify(updated));
+  return updated;
 };
 
 export const clearAllHistory = () => {

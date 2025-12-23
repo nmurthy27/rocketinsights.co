@@ -1,106 +1,86 @@
 
 import React, { useState, useEffect } from 'react';
-import { fetchFromSupabase } from '../services/supabaseClient';
+import { NewsItem, SavedEmail, UserProfile } from '../types';
+import { getEmailHistory, saveEmailToHistory, deleteEmailFromHistory } from '../services/localStorageService';
+import { getGlobalUsers, saveGlobalUser, deleteGlobalUser } from '../services/firebaseService';
 
 interface AdminDashboardProps {
   isOpen: boolean;
   onClose: () => void;
+  news: NewsItem[];
+  currentUser: UserProfile | null;
 }
 
-type Tab = 'subscribers' | 'master_logs' | 'pulse_logs' | 'leadership_logs' | 'emailer';
+type Tab = 'emailer' | 'history' | 'settings';
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose }) => {
-  const [activeTab, setActiveTab] = useState<Tab>('subscribers');
-  const [data, setData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose, news, currentUser }) => {
+  const [activeTab, setActiveTab] = useState<Tab>('emailer');
+  const [emailHistory, setEmailHistory] = useState<SavedEmail[]>([]);
+  const [viewingEmail, setViewingEmail] = useState<SavedEmail | null>(null);
+  const [users, setUsers] = useState<UserProfile[]>([]);
   
-  // Email Template State
-  const [emailSubject, setEmailSubject] = useState('Rocket Insights: Your Weekly Market Intelligence Digest');
-  const [emailIntro, setEmailIntro] = useState('Here is your curated update on the latest agency movements, account wins, and leadership changes across APAC.');
-  const [emailTopStory, setEmailTopStory] = useState('WPP Appoints New CEO for Southeast Asia');
-  const [emailTopStorySummary, setEmailTopStorySummary] = useState('In a major leadership reshuffle, WPP has announced...');
+  // New User Form State
+  const [newUserEmail, setNewUserEmail] = useState('');
+  const [newUserRole, setNewUserRole] = useState<UserProfile['role']>('read_only');
+  const [isAdding, setIsAdding] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
 
-  useEffect(() => {
-    if (isOpen && activeTab !== 'emailer') {
-      loadData(activeTab);
-    }
-  }, [isOpen, activeTab]);
+  const isSuperAdmin = currentUser?.role === 'super_admin';
 
-  const loadData = async (collectionName: string) => {
-    setLoading(true);
-    let targetCollection = '';
-    
-    switch(collectionName) {
-      case 'subscribers': targetCollection = 'subscribers'; break;
-      case 'master_logs': targetCollection = 'business_search_logs'; break;
-      case 'pulse_logs': targetCollection = 'pulse_scanner_logs'; break;
-      case 'leadership_logs': targetCollection = 'leadership_logs'; break;
+  // Load History and Users
+  const syncData = async () => {
+    setIsSyncing(true);
+    try {
+      const globalUsers = await getGlobalUsers();
+      setUsers(globalUsers.length > 0 ? globalUsers : []);
+      setEmailHistory(getEmailHistory());
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsSyncing(false);
     }
-
-    if (targetCollection) {
-      const results = await fetchFromSupabase(targetCollection);
-      setData(results);
-    }
-    setLoading(false);
   };
 
-  const generateEmailHTML = () => {
-    return `
-<!DOCTYPE html>
-<html>
-<head>
-<style>
-  body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; background-color: #f4f4f4; margin: 0; padding: 0; }
-  .container { max-width: 600px; margin: 0 auto; background-color: #ffffff; }
-  .header { background: linear-gradient(90deg, #4f46e5, #ec4899); padding: 30px 20px; text-align: center; }
-  .header h1 { color: white; margin: 0; font-size: 24px; letter-spacing: 1px; }
-  .content { padding: 30px 20px; color: #333333; line-height: 1.6; }
-  .section-title { font-size: 14px; font-weight: bold; color: #4f46e5; text-transform: uppercase; letter-spacing: 1px; margin-top: 20px; border-bottom: 2px solid #f0f0f0; padding-bottom: 5px; }
-  .card { background-color: #f9fafb; border: 1px solid #e5e7eb; border-radius: 8px; padding: 15px; margin-top: 15px; }
-  .headline { font-size: 16px; font-weight: bold; color: #111827; margin: 0 0 5px 0; }
-  .summary { font-size: 14px; color: #6b7280; margin: 0; }
-  .footer { background-color: #1f2937; color: #9ca3af; text-align: center; padding: 20px; font-size: 12px; }
-  .btn { display: inline-block; background-color: #4f46e5; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; font-weight: bold; margin-top: 20px; }
-</style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>ROCKET INSIGHTS</h1>
-    </div>
-    <div class="content">
-      <p>Hi there,</p>
-      <p>${emailIntro}</p>
-      
-      <div class="section-title">Top Story of the Week</div>
-      <div class="card">
-        <h3 class="headline">${emailTopStory}</h3>
-        <p class="summary">${emailTopStorySummary}</p>
-      </div>
+  useEffect(() => {
+    if (isOpen) syncData();
+  }, [isOpen]);
 
-      <div class="section-title">Market Pulse Snapshot</div>
-      <div class="card">
-         <h3 class="headline">Ogilvy Wins Global Account</h3>
-         <p class="summary">WPP's creative network secures duties after competitive pitch.</p>
-      </div>
-      <div class="card">
-         <h3 class="headline">Publicis Groupe Growth</h3>
-         <p class="summary">Organic growth beats expectations in Q3 earnings report.</p>
-      </div>
+  const handleUpdateUserRole = async (email: string, newRole: UserProfile['role']) => {
+    if (!isSuperAdmin) return;
+    const userToUpdate = users.find(u => u.email === email);
+    if (userToUpdate) {
+      const updated = { ...userToUpdate, role: newRole };
+      await saveGlobalUser(updated);
+      await syncData();
+    }
+  };
 
-      <center>
-        <a href="https://rocketinsights.co" class="btn">View Full Report</a>
-      </center>
-    </div>
-    <div class="footer">
-      &copy; 2025 Rocket Insights. All rights reserved.<br/>
-      You are receiving this because you subscribed to our weekly digest.<br/>
-      <a href="#" style="color: #9ca3af;">Unsubscribe</a>
-    </div>
-  </div>
-</body>
-</html>
-    `;
+  const handleDeleteUser = async (email: string) => {
+    if (!isSuperAdmin) return;
+    if (email.toLowerCase() === 'nmurthy27@gmail.com') {
+      alert("System security protocol: Primary Super Admin cannot be deleted.");
+      return;
+    }
+    if (window.confirm(`Are you sure you want to revoke all access for ${email}?`)) {
+      await deleteGlobalUser(email);
+      await syncData();
+    }
+  };
+
+  const handleAddUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUserEmail || !newUserEmail.includes('@')) return;
+    
+    setIsSyncing(true);
+    await saveGlobalUser({
+      email: newUserEmail,
+      role: newUserRole,
+      isSubscribed: false
+    });
+    
+    setNewUserEmail('');
+    setIsAdding(false);
+    await syncData();
   };
 
   if (!isOpen) return null;
@@ -109,201 +89,112 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ isOpen, onClose 
     <div className="fixed inset-0 z-[60] overflow-hidden">
       <div className="absolute inset-0 bg-slate-900/80 backdrop-blur-sm" onClick={onClose}></div>
       
-      <div className="absolute inset-y-0 right-0 max-w-6xl w-full bg-white shadow-2xl transform transition-transform duration-300 overflow-hidden flex flex-col">
+      <div className="absolute inset-y-0 right-0 max-w-7xl w-full bg-white shadow-2xl transform transition-transform duration-300 overflow-hidden flex flex-col">
         {/* Header */}
         <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center shadow-md shrink-0">
-          <div className="flex items-center gap-3">
-             <div className="bg-indigo-500 p-2 rounded-lg">
-               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+          <div className="flex items-center gap-4">
+             <div className="flex items-center gap-3">
+               <div className="bg-indigo-500 p-2 rounded-lg">
+                 <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M11 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3" /></svg>
+               </div>
+               <div>
+                  <h2 className="text-xl font-bold text-white">Institutional Control Center</h2>
+                  <div className="flex items-center gap-2 mt-0.5">
+                     <span className={`text-[9px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded bg-indigo-500 text-white`}>
+                        {currentUser?.role?.replace('_', ' ')}
+                     </span>
+                     {isSyncing && <span className="text-[8px] animate-pulse text-indigo-300">Syncing Firestore...</span>}
+                  </div>
+               </div>
              </div>
-             <h2 className="text-xl font-bold">Admin Panel (Supabase)</h2>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white transition-colors">
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
 
-        {/* Content */}
-        <div className="flex-1 overflow-hidden flex flex-col">
-            <div className="flex flex-1 overflow-hidden">
-               {/* Sidebar */}
-               <div className="w-64 bg-slate-50 border-r border-slate-200 flex flex-col p-4 space-y-2 shrink-0 overflow-y-auto">
-                  <button 
-                    onClick={() => setActiveTab('subscribers')}
-                    className={`text-left px-4 py-3 rounded-xl font-medium text-sm transition-all ${activeTab === 'subscribers' ? 'bg-white shadow-sm text-indigo-600 ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-white hover:text-slate-900'}`}
-                  >
-                    Subscribers List
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('master_logs')}
-                    className={`text-left px-4 py-3 rounded-xl font-medium text-sm transition-all ${activeTab === 'master_logs' ? 'bg-white shadow-sm text-indigo-600 ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-white hover:text-slate-900'}`}
-                  >
-                    Business Intelligence Logs
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('pulse_logs')}
-                    className={`text-left px-4 py-3 rounded-xl font-medium text-sm transition-all ${activeTab === 'pulse_logs' ? 'bg-white shadow-sm text-indigo-600 ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-white hover:text-slate-900'}`}
-                  >
-                    Pulse Scanner Logs
-                  </button>
-                  <button 
-                    onClick={() => setActiveTab('leadership_logs')}
-                    className={`text-left px-4 py-3 rounded-xl font-medium text-sm transition-all ${activeTab === 'leadership_logs' ? 'bg-white shadow-sm text-indigo-600 ring-1 ring-indigo-200' : 'text-slate-600 hover:bg-white hover:text-slate-900'}`}
-                  >
-                    Leadership Logs
-                  </button>
-                  <div className="h-px bg-slate-200 my-2"></div>
-                  <button 
-                    onClick={() => setActiveTab('emailer')}
-                    className={`text-left px-4 py-3 rounded-xl font-bold text-sm transition-all ${activeTab === 'emailer' ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white shadow-md' : 'text-slate-600 hover:bg-white hover:text-slate-900'}`}
-                  >
-                    Email Template Editor
-                  </button>
-               </div>
+        <div className="flex-1 overflow-hidden flex">
+            <div className="w-72 bg-slate-50 border-r border-slate-200 flex flex-col p-6 space-y-2 shrink-0">
+               <button onClick={() => setActiveTab('emailer')} className={`text-left px-4 py-3 rounded-xl font-bold text-sm ${activeTab === 'emailer' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-600 hover:bg-white'}`}>Digest Builder</button>
+               <button onClick={() => setActiveTab('history')} className={`text-left px-4 py-3 rounded-xl font-bold text-sm ${activeTab === 'history' ? 'bg-indigo-600 text-white shadow-lg' : 'text-slate-600 hover:bg-white'}`}>Archive</button>
+               <div className="h-px bg-slate-200 my-6"></div>
+               <button onClick={() => setActiveTab('settings')} className={`text-left px-4 py-3 rounded-xl font-bold text-sm ${activeTab === 'settings' ? 'bg-slate-900 text-white shadow-lg' : 'text-slate-600 hover:bg-white'}`}>User Management</button>
+            </div>
 
-               {/* Main View */}
-               <div className="flex-1 bg-white overflow-y-auto p-8">
-                 {loading ? (
-                   <div className="flex justify-center items-center h-full">
-                     <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
-                   </div>
-                 ) : activeTab === 'emailer' ? (
-                   <div className="h-full flex flex-col gap-6">
-                      <div className="flex justify-between items-center">
-                         <h2 className="text-2xl font-bold text-slate-800">Digest Email Builder</h2>
-                         <button 
-                           onClick={() => {
-                             const blob = new Blob([generateEmailHTML()], {type: 'text/html'});
-                             const url = URL.createObjectURL(blob);
-                             window.open(url, '_blank');
-                           }}
-                           className="px-4 py-2 bg-slate-800 text-white rounded-lg text-sm font-bold hover:bg-slate-700"
-                         >
-                           Preview in Browser
-                         </button>
-                      </div>
-                      
-                      <div className="flex flex-col lg:flex-row gap-8 h-full">
-                        {/* Editor Inputs */}
-                        <div className="w-full lg:w-1/3 space-y-6 overflow-y-auto pr-2">
-                           <div className="space-y-2">
-                              <label className="text-xs font-bold uppercase text-slate-500">Subject Line</label>
-                              <input 
-                                className="w-full border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-indigo-500" 
-                                value={emailSubject}
-                                onChange={e => setEmailSubject(e.target.value)}
-                              />
-                           </div>
-                           <div className="space-y-2">
-                              <label className="text-xs font-bold uppercase text-slate-500">Intro Text</label>
-                              <textarea 
-                                className="w-full border border-slate-300 rounded-lg p-2 text-sm h-32 focus:ring-2 focus:ring-indigo-500" 
-                                value={emailIntro}
-                                onChange={e => setEmailIntro(e.target.value)}
-                              />
-                           </div>
-                           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-4">
-                              <h4 className="font-bold text-slate-800 text-sm">Top Story Section</h4>
-                              <div className="space-y-2">
-                                <label className="text-xs font-bold uppercase text-slate-500">Headline</label>
-                                <input 
-                                  className="w-full border border-slate-300 rounded-lg p-2 text-sm" 
-                                  value={emailTopStory}
-                                  onChange={e => setEmailTopStory(e.target.value)}
-                                />
-                              </div>
-                              <div className="space-y-2">
-                                <label className="text-xs font-bold uppercase text-slate-500">Summary</label>
-                                <textarea 
-                                  className="w-full border border-slate-300 rounded-lg p-2 text-sm h-24" 
-                                  value={emailTopStorySummary}
-                                  onChange={e => setEmailTopStorySummary(e.target.value)}
-                                />
-                              </div>
-                           </div>
-                        </div>
+            <div className="flex-1 bg-white overflow-y-auto p-10">
+               {activeTab === 'settings' && (
+                 <div className="space-y-12 animate-fade-in">
+                    <div className="flex items-center justify-between">
+                       <h3 className="text-2xl font-black text-slate-900 tracking-tight">Global User Registry</h3>
+                       {isSuperAdmin && (
+                          <button 
+                            onClick={() => setIsAdding(!isAdding)}
+                            className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest"
+                          >
+                             {isAdding ? 'Cancel' : 'Register New User'}
+                          </button>
+                       )}
+                    </div>
 
-                        {/* Live Preview */}
-                        <div className="w-full lg:w-2/3 bg-slate-100 rounded-xl border border-slate-300 overflow-hidden flex flex-col">
-                           <div className="bg-slate-200 px-4 py-2 text-xs font-mono text-slate-500 border-b border-slate-300">
-                              HTML Preview
-                           </div>
-                           <div className="flex-1 bg-white overflow-auto p-4">
-                              <iframe 
-                                srcDoc={generateEmailHTML()} 
-                                className="w-full h-full border-0" 
-                                title="Email Preview"
-                              />
-                           </div>
-                        </div>
-                      </div>
-                   </div>
-                 ) : (
-                   <div className="h-full flex flex-col">
-                     <h2 className="text-2xl font-bold text-slate-800 mb-6 capitalize">{activeTab.replace('_', ' ').replace('logs', 'Intelligence Logs')}</h2>
-                     <div className="bg-white border border-slate-200 rounded-xl shadow-sm overflow-hidden flex-1 flex flex-col">
-                        <div className="overflow-x-auto overflow-y-auto flex-1">
-                          <table className="min-w-full divide-y divide-slate-200">
-                            <thead className="bg-slate-50 sticky top-0">
-                              <tr>
-                                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Timestamp</th>
-                                {activeTab === 'subscribers' && (
-                                  <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">User</th>
-                                )}
-                                <th className="px-6 py-3 text-left text-xs font-bold text-slate-500 uppercase tracking-wider">Details</th>
-                              </tr>
-                            </thead>
-                            <tbody className="bg-white divide-y divide-slate-200">
-                              {data.map((row: any, idx: number) => (
-                                <tr key={row.id || idx}>
-                                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
-                                    {row.created_at ? new Date(row.created_at).toLocaleString() : 'N/A'}
-                                  </td>
-                                  
-                                  {activeTab === 'subscribers' && (
-                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-slate-900">
-                                      {row.email || 'Anonymous'}
-                                    </td>
-                                  )}
+                    {isAdding && (
+                       <form onSubmit={handleAddUser} className="bg-slate-50 p-8 rounded-[2rem] border border-slate-200 grid grid-cols-1 md:grid-cols-3 gap-6 animate-fade-in">
+                          <input 
+                             required 
+                             className="bg-white border p-3 rounded-xl text-sm font-bold" 
+                             placeholder="Email Address" 
+                             value={newUserEmail} 
+                             onChange={e => setNewUserEmail(e.target.value)} 
+                          />
+                          <select className="bg-white border p-3 rounded-xl text-sm font-bold" value={newUserRole} onChange={e => setNewUserRole(e.target.value as any)}>
+                             <option value="read_only">Read Only</option>
+                             <option value="admin">Admin</option>
+                             <option value="super_admin">Super Admin</option>
+                          </select>
+                          <button className="bg-slate-900 text-white rounded-xl font-black uppercase tracking-widest text-xs">Verify & Save</button>
+                       </form>
+                    )}
 
-                                  <td className="px-6 py-4 text-sm text-slate-500">
-                                    {activeTab === 'subscribers' && (
-                                      <span>
-                                        Status: {row.is_subscribed ? 'Active' : 'Unsubscribed'} • Role: {row.role} • Regions: {row.regions?.join(', ')}
+                    <div className="overflow-hidden border border-slate-200 rounded-3xl shadow-sm bg-white">
+                       <table className="min-w-full divide-y divide-slate-200">
+                          <thead className="bg-slate-50">
+                             <tr>
+                                <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase">Member Identity</th>
+                                <th className="px-6 py-4 text-left text-[10px] font-black text-slate-500 uppercase">Authorization</th>
+                                {isSuperAdmin && <th className="px-6 py-4 text-right text-[10px] font-black text-slate-500 uppercase">Protocol Actions</th>}
+                             </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                             {users.map(u => (
+                                <tr key={u.email} className="hover:bg-slate-50 group transition-colors">
+                                   <td className="px-6 py-5 whitespace-nowrap font-bold text-slate-900">{u.email}</td>
+                                   <td className="px-6 py-5 whitespace-nowrap">
+                                      <span className="text-[9px] font-black uppercase tracking-widest px-2 py-1 rounded bg-indigo-50 text-indigo-600 border border-indigo-100">
+                                         {u.role.replace('_', ' ')}
                                       </span>
-                                    )}
-                                    {activeTab === 'master_logs' && (
-                                      <span className="font-mono bg-slate-100 px-2 py-1 rounded">
-                                        Query: "{row.query}"
-                                      </span>
-                                    )}
-                                    {activeTab === 'pulse_logs' && (
-                                      <span className="font-mono bg-slate-100 px-2 py-1 rounded">
-                                        {row.client_query} | {row.country_query} | {row.media_type}
-                                      </span>
-                                    )}
-                                    {activeTab === 'leadership_logs' && (
-                                      <span className="font-mono bg-slate-100 px-2 py-1 rounded">
-                                        {row.role} @ {row.company} ({row.country})
-                                      </span>
-                                    )}
-                                  </td>
+                                   </td>
+                                   {isSuperAdmin && (
+                                      <td className="px-6 py-5 whitespace-nowrap text-right flex justify-end gap-3">
+                                         <select 
+                                           className="bg-slate-100 border text-[10px] font-black px-2 py-1 rounded-lg"
+                                           value={u.role}
+                                           onChange={e => handleUpdateUserRole(u.email, e.target.value as any)}
+                                         >
+                                            <option value="read_only">Read Only</option>
+                                            <option value="admin">Admin</option>
+                                            <option value="super_admin">Super Admin</option>
+                                         </select>
+                                         <button onClick={() => handleDeleteUser(u.email)} className="text-slate-300 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition-all">
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                         </button>
+                                      </td>
+                                   )}
                                 </tr>
-                              ))}
-                              {data.length === 0 && (
-                                <tr>
-                                  <td colSpan={activeTab === 'subscribers' ? 3 : 2} className="px-6 py-10 text-center text-slate-400">
-                                    No records found in this collection.
-                                  </td>
-                                </tr>
-                              )}
-                            </tbody>
-                          </table>
-                        </div>
-                     </div>
-                   </div>
-                 )}
-               </div>
+                             ))}
+                          </tbody>
+                       </table>
+                    </div>
+                 </div>
+               )}
             </div>
         </div>
       </div>

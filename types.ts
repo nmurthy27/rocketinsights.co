@@ -11,6 +11,7 @@ export interface AgencyWin {
   agency: string;
   client: string;
   country: string;
+  targetAudience?: string; // New: Age Group / Demographic focus
   source: string;
   date: string;
 }
@@ -20,6 +21,7 @@ export interface NewsItem {
   category: string;
   headline: string;
   summary: string;
+  targetAudience?: string; // New: Audience focus
   source: string;
   imageQuery?: string;
 }
@@ -36,11 +38,12 @@ export interface LeaderProfile {
 
 export interface UserProfile {
   email: string;
-  role: 'admin' | 'subscriber';
+  role: 'super_admin' | 'admin' | 'read_only';
   regions?: string[];
   topics?: string[];
   isSubscribed?: boolean;
   consentDate?: string;
+  lastActive?: string;
 }
 
 export interface MasterSearchResult {
@@ -71,4 +74,12 @@ export interface LeadershipSearchHistoryItem {
   company: string;
   country: string;
   timestamp: number;
+}
+
+export interface SavedEmail {
+  id: string;
+  date: string;
+  subject: string;
+  html: string;
+  templateId: string;
 }
